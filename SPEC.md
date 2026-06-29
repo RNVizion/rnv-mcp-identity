@@ -1,6 +1,6 @@
 # Specification: rnv-mcp-identity
 
-*Working draft. This revision pins the scope, the dependency map, and the refusal semantics; the data model, wire format, and per-operation detail are stubbed for the next pass. Grounded in [docs/PRIOR-ART.md](docs/PRIOR-ART.md).*
+*Working draft. This revision pins the scope, the dependency map, the refusal semantics, and the identity data model; the per-operation sequence, capability naming, and wire format are stubbed for the next pass. Grounded in [docs/PRIOR-ART.md](docs/PRIOR-ART.md).*
 
 ## The rule
 
@@ -19,7 +19,7 @@ It explicitly does **not** cover:
 - **L4, structural enforcement:** holding an agent to its scope across systems.
 - **L5, cross-organizational behavioral trust:** trusting an agent beyond the deployment that made it.
 
-L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 7). Closing it is the AIII argument, not this code.
+L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 8). Closing it is the AIII argument, not this code.
 
 ## 2. Position in the MCP stack
 
@@ -45,7 +45,70 @@ The build rule is visible at a glance: most concerns are reused, and the small s
 
 No new cryptography. Where a draft already specifies a primitive, this layer adopts it rather than competing, conforming to the stance of `draft-klrc-aiagent-auth`.
 
-## 4. Resolve / refuse / unknown
+## 4. Identity data model
+
+The identity is a signed token the agent presents with a request. It reuses registered JWT and EAT claims for the envelope, and adds the minimum agent-specific claims the gap requires. It asserts *who*, not *what the agent may do*: authorization (L3) is resolved separately, so capabilities can change without re-minting identity. This avoids the immutability trap that limits agent-claims-in-JWT approaches, where a delegatee can't attenuate authority without breaking the cryptographic chain.
+
+### 4.1 The agent identity token
+
+Envelope, reusing registered claims:
+
+| Claim | Meaning | Source |
+|---|---|---|
+| `iss` | the identity authority that minted this identity (the control plane) | JWT |
+| `sub` | the agent's stable identifier, as a WIMSE workload identifier (SPIFFE-compatible URI) | WIMSE identifier |
+| `aud` | the MCP server(s) this identity is for; aligns with Resource Indicators | RFC 8707 |
+| `iat` / `nbf` / `exp` | issued-at, not-before, expiry; identities are short-lived | JWT |
+| `jti` | unique token id, for replay defense and audit | JWT |
+| `cnf` | the proof-of-possession key the agent must prove it holds; binds L1 to L2 | RFC 7800 |
+
+Agent-specific, the minimal addition:
+
+| Claim | Meaning |
+|---|---|
+| `controller` | the verifiable identifier of the principal that operates this agent (the owner binding; see 4.2) |
+| `agent_kind` | optional, coarse descriptor of the agent runtime; informational, never a trust input |
+
+Capabilities are deliberately absent from the token. What the agent may do is resolved at decision time from policy keyed on `(sub, controller, aud)`. Identity says who; authorization says what, and the two move on different clocks.
+
+### 4.2 The owner binding (Dual-Identity Credential)
+
+L1 has two halves: who the agent is, and who controls it. The `controller` claim carries the second. Its trust comes from the issuer: by signing a token that names both `sub` and `controller`, the issuer (which has authority over both) vouches that this agent is operated by this principal. This is the Dual-Identity Credential pattern, reduced to its minimal viable form.
+
+- **v0, issuer-asserted:** the issuer states the `controller` in the signed identity token. Trust derives from the issuer's authority; enough to attribute every action to a controlling principal.
+- **Later, chained or co-signed:** the agent credential chains to, or is co-signed by, the controller's own credential, so the binding holds even where the issuer isn't trusted for that relationship. A strengthening, not required for v0.
+
+The invariant that makes this useful: an allowed call is always attributable to a `(sub, controller)` pair. There is no anonymous agent action, which ties directly to the audit-evasion mitigation in section 7.
+
+### 4.3 Verification inputs (how L2 consumes this)
+
+The data model is shaped so L2 can verify without inventing anything:
+
+- **Issuer signature:** verify the token signature against the issuer's published keys (JWKS). Establishes the token is authentic and unaltered.
+- **Proof of possession:** the agent proves it holds the `cnf` key, via a WIMSE Workload Proof Token or an HTTP Message Signature (RFC 9421) over the request. Turns a stealable bearer token into a held credential.
+- **Attestation, optional:** an EAT profile for the agent runtime, where a deployment wants assurance the agent is a genuine, un-tampered runtime and not merely a holder of keys.
+
+### 4.4 Worked example (illustrative, non-normative)
+
+```
+// Agent identity token, decoded claims
+{
+  "iss":  "https://control-plane.example",
+  "sub":  "wimse://example/agent/report-bot",
+  "aud":  "https://mcp.example/finance",
+  "controller": "https://example/principal/acme-ops",
+  "agent_kind": "scheduled-report-runner",
+  "cnf":  { "jkt": "NzbLsXh8u..." },   // thumbprint of the proof key
+  "iat":  1751130000,
+  "nbf":  1751130000,
+  "exp":  1751130900,                  // 15-minute lifetime
+  "jti":  "9f2c...e1"
+}
+```
+
+The agent presents this token plus a proof: a signature over the request using the key whose thumbprint is in `cnf`. The layer verifies the issuer signature, checks `aud` matches this server, checks the proof against `cnf`, then resolves capabilities for `(sub, controller, aud)` from policy. Any failure resolves to `deny` or `unknown` per section 5; nothing defaults to allow.
+
+## 5. Resolve / refuse / unknown
 
 Every tool call passes through one decision with exactly three possible outcomes:
 
@@ -53,9 +116,9 @@ Every tool call passes through one decision with exactly three possible outcomes
 - **deny:** the identity resolved and verified, but the action is outside its capabilities; or an identity was presented and verification failed. The call is refused, with a machine-readable reason.
 - **unknown:** the identity could not be resolved or verified at all (absent, malformed, unverifiable). The call is refused. The layer does not assume a default identity and does not infer a permission.
 
-The invariant: `unknown` is never silently upgraded to `allow`. An unverified caller does not act. This is the rule from section 0 made operational.
+The invariant: `unknown` is never silently upgraded to `allow`. An unverified caller does not act. This is the opening rule made operational.
 
-## 5. Eval gates
+## 6. Eval gates
 
 Correctness is measured in CI, not asserted. Three gates, mirroring the retrieval project's harness:
 
@@ -65,20 +128,19 @@ Correctness is measured in CI, not asserted. Three gates, mirroring the retrieva
 
 The third gate is load-bearing. Without it, a layer that refuses everything would pass `correct-refusal` trivially; `false-refusal` is what keeps the system honest as the rules grow.
 
-## 6. Threat model (stub, to expand with the data model)
+## 7. Threat model (stub, to expand with the operations sequence)
 
 - **Identity spoofing:** a caller claims an identity it doesn't hold. Mitigated by proof-of-possession (WPT), attestation (EAT), and signature verification (RFC 9421).
 - **Scope escalation:** an authenticated agent attempts actions beyond its capabilities. Mitigated by a per-call capability check that denies by default.
-- **Audit evasion:** actions taken without an attributable identity. Mitigated by the section 4 invariant: no `unknown` caller is allowed to act, so every allowed call binds to a verified identity.
+- **Audit evasion:** actions taken without an attributable identity. Mitigated by the section 4.2 invariant: no `unknown` caller is allowed to act, so every allowed call binds to a `(sub, controller)` pair.
 
-## 7. The L4 boundary
+## 8. The L4 boundary
 
 The boundary is the first multi-hop: when an agent must act on a second system on behalf of the first, or delegate attenuated authority across a trust domain. That needs holder-attenuable delegation and cross-protocol binding, which the field has no unified answer for yet (AIMS's authorization section reads "TODO Security"; the AIP survey finds no single draft that unifies it). This layer stops at the single-deployment edge and marks that edge explicitly in code, so the gap is visible rather than papered over.
 
-## 8. To fill (next pass)
+## 9. To fill (next pass)
 
-- The identity data model: concrete claim set for the agent identity and the owner binding.
-- The L1 / L2 / L3 operations: the exact sequence for resolve, verify, and authorize.
+- The L1 / L2 / L3 operations: the exact sequence for resolve, verify, and authorize on a call.
 - The capability naming convention for L3 scopes.
-- The wire format for carrying identity and proof alongside an MCP request.
+- The wire format: how the identity token and its proof ride alongside an MCP request (headers, binding to the request).
 - The machine-readable `deny` and `unknown` reason vocabulary.
