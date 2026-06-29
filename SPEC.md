@@ -19,7 +19,7 @@ It explicitly does **not** cover:
 - **L4, structural enforcement:** holding an agent to its scope across systems.
 - **L5, cross-organizational behavioral trust:** trusting an agent beyond the deployment that made it.
 
-L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 9). Closing it is the AIII argument, not this code.
+L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 9). Closing it is the AIII (Artificial Intelligence Identification Initiative) argument, not this code.
 
 ## 2. Position in the MCP stack
 

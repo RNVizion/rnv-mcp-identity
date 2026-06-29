@@ -56,7 +56,7 @@ Agentic JWT adds agent claims to JWTs but can't attenuate authority without mint
 
 The frontier is the cross-domain, multi-hop layer, and the drafts say so plainly. AIMS composes WIMSE, SPIFFE, and OAuth, but its authorization section reads "TODO Security." A survey of the field (the AIP preprint) finds that no single draft yet provides holder-attenuable delegation, cross-protocol bindings, and provenance in one protocol.
 
-That frontier is L4 and L5. It's exactly where our scope stops, and where the larger AIII argument lives.
+That frontier is L4 and L5. It's exactly where our scope stops, and where the larger AIII (Artificial Intelligence Identification Initiative) argument lives.
 
 ## What this means for the build
 

@@ -57,7 +57,7 @@ RFC 7638 thumbprints, and EAT-style attestation. The project's own contribution
 is the composition, the per-tool capability model, and the resolve/refuse/unknown
 semantics, expressed as MCP middleware.
 
-This project is the reference-implementation arm of a broader initiative (AIII).
+This project is the reference-implementation arm of a broader initiative, AIII (the Artificial Intelligence Identification Initiative).
 Layers L4 and L5, structural enforcement and cross-organization behavioral trust,
 are deliberately **out of scope** for this codebase: they cannot be resolved by a
 single operator. That boundary is precisely why a neutral foundation matters, and
@@ -73,7 +73,7 @@ Each is answered here as it stands today.
 
 | Required field | Current answer |
 |---|---|
-| **Project name** | rnv-mcp-identity (working name; may be renamed before submission) |
+| **Project name** | rnv-mcp-identity (confirmed; the public repository name) |
 | **Description: what it does** | An L1–L3 identity and authorization layer for MCP servers; resolve, refuse, or mark unknown on every tool call |
 | **Description: why valuable** | A large share of deployed MCP servers accept tool calls without verifying caller identity. This is the missing, reusable safety pattern: holder-of-key agent identity plus deny-by-default per-tool authorization |
 | **Origin and history** | Built under the RNVizion banner as a reference implementation composing IETF/WIMSE/OAuth building blocks; spec-first, then implementation, then a runnable demo |
@@ -82,7 +82,7 @@ Each is answered here as it stands today.
 | **Example use cases + evidence of adoption** | Use cases below are concrete; **adoption evidence is nascent and stated honestly as a gap** |
 | **TC sponsor (if identified)** | None yet. Securing one is a growth-plan milestone |
 | **OSI-approved permissive license** | Apache-2.0 |
-| **Public repository** | github.com/RNVizion/rnv-mcp-identity (to confirm/finalize) |
+| **Public repository** | github.com/RNVizion/rnv-mcp-identity |
 | **Automated validation and delivery** | GitHub Actions: a test matrix (Linux + Windows, Python 3.10–3.12) plus a separate FastMCP demo job; the suite includes named eval gates for correct resolution, correct refusal, and no false refusal |
 | **Release methodology** | SemVer with tagged releases; pre-1.0 while the wire format stabilizes (documented in the spec) |
 | **Public contribution process for specs** | SPEC.md is versioned in-repo; changes proceed by pull request with rationale. Formalized in CONTRIBUTING.md (scheduled) |
@@ -92,7 +92,7 @@ Each is answered here as it stands today.
 | **Leadership and decision-making** | Currently single-maintainer; governance defines the path to shared, merit-based maintainership (scheduled in GOVERNANCE.md) |
 | **Documented governance (GOVERNANCE.md)** | Scheduled (see checklist) |
 | **Official communication channels** | GitHub Issues and Discussions to start; no chat channel yet |
-| **Project website** | Planned at rnvizion.dev/aiii (not yet live) |
+| **Project website** | Live at rnvizion.dev/aiii |
 | **Social accounts** | RNVizion presence on dev.to and LinkedIn (optional field) |
 | **Existing financial sponsorship** | None |
 | **Infrastructure needs** | None from the foundation at this stage; CI runs on GitHub-hosted runners |

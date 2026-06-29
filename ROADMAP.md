@@ -1,4 +1,6 @@
-# AIII — Build Roadmap
+# AIII Build Roadmap
+
+*AIII is the Artificial Intelligence Identification Initiative; rnv-mcp-identity is its reference implementation.*
 
 From a draft proposal to a working MCP identity layer, submitted where MCP already lives.
 
