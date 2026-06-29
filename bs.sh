@@ -3,6 +3,7 @@
 set -euo pipefail
 
 mkdir -p '.github/workflows'
+mkdir -p 'examples'
 mkdir -p 'src/rnv_mcp_identity'
 mkdir -p 'src/rnv_mcp_identity/adapters'
 mkdir -p 'tests'
@@ -700,6 +701,65 @@ class JwtVerifier:
         return None
 RNV_FILE_EOF
 
+cat > 'tests/test_demo_inprocess.py' <<'RNV_FILE_EOF'
+"""In-process demo: drive the guarded FastMCP server through the in-memory
+client and confirm one allow and three refusals. Needs fastmcp + verify."""
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+
+pytest.importorskip("fastmcp")
+pytest.importorskip("jwt")
+pytest.importorskip("cryptography")
+
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "examples"))
+
+from fastmcp import Client
+
+import rnv_mcp_identity.adapters.fastmcp_middleware as adapter
+from demo_server import build_server
+import identity_kit as kit
+
+
+def test_demo_allows_then_refuses(monkeypatch):
+    state = {"headers": {}}
+    # The in-memory transport carries no HTTP headers; inject them at the source.
+    monkeypatch.setattr(adapter, "get_http_headers", lambda: dict(state["headers"]))
+
+    mcp = build_server()
+    tok = kit.mint_identity()
+    proof = kit.mint_proof(tok)
+
+    async def run():
+        async with Client(mcp) as client:
+            # 1. valid + in scope -> allowed
+            state["headers"] = kit.headers_for(tok, proof)
+            result = await client.call_tool("read_report", {})
+            assert result is not None
+
+            # 2. valid + out of scope -> capability_denied
+            with pytest.raises(Exception) as denied:
+                await client.call_tool("delete_report", {})
+            assert "capability_denied" in str(denied.value)
+
+            # 3. no identity -> identity_absent
+            state["headers"] = {}
+            with pytest.raises(Exception) as absent:
+                await client.call_tool("read_report", {})
+            assert "identity_absent" in str(absent.value)
+
+            # 4. tampered proof -> proof_invalid
+            state["headers"] = kit.headers_for(tok, proof[:-4] + "AAAA")
+            with pytest.raises(Exception) as badproof:
+                await client.call_tool("read_report", {})
+            assert "proof_invalid" in str(badproof.value)
+
+    asyncio.run(run())
+RNV_FILE_EOF
+
 cat > 'tests/test_engine.py' <<'RNV_FILE_EOF'
 """Decision-engine tests. Seed the three eval gates (SPEC section 7)."""
 from __future__ import annotations
@@ -1300,6 +1360,220 @@ def test_engine_denies_bad_proof_with_real_verifier():
     assert d.reason is Reason.PROOF_INVALID
 RNV_FILE_EOF
 
+cat > 'examples/README.md' <<'RNV_FILE_EOF'
+# Demo: an MCP server that resolves or refuses
+
+This wires `IdentityMiddleware` onto a real FastMCP server with two tools and
+shows the layer allowing one call and refusing three, each for its own reason.
+
+## What it proves
+
+The server grants the demo agent `tool:read_*` and nothing else. So:
+
+| call | identity | result |
+|---|---|---|
+| `read_report` | valid token + proof, in scope | **allow** |
+| `delete_report` | valid token + proof, out of scope | refuse: `capability_denied` |
+| `read_report` | no identity headers | refuse: `identity_absent` |
+| `read_report` | valid token, tampered proof | refuse: `proof_invalid` |
+
+Nothing reaches a tool body without a verified, authorized identity.
+
+## Run it in-process (no network)
+
+```
+pip install -e ".[dev,verify,fastmcp]"
+python -m pytest -q tests/test_demo_inprocess.py
+```
+
+The in-process test injects the headers directly (the in-memory transport has no
+HTTP layer) and drives the server through the FastMCP client.
+
+## Run it over HTTP (the real wire path)
+
+```
+python examples/demo_server.py        # terminal 1
+python examples/demo_client_http.py   # terminal 2
+```
+
+## The wire format (v0)
+
+`identity_kit.headers_for` is the spec: the identity token rides in the
+`mcp-agent-identity` header and the proof in `mcp-agent-proof`. The proof is a
+WPT-style JWS whose protected header carries the holder's public JWK and whose
+`ath` claim is `base64url(sha256(identity_token))`, binding the proof to that
+exact token. A stolen token alone cannot act: the caller must also hold the key
+the token's `cnf` commits to.
+RNV_FILE_EOF
+
+cat > 'examples/demo_client_http.py' <<'RNV_FILE_EOF'
+"""HTTP client that exercises the guarded server over the real header wire path.
+
+Start the server first:  python examples/demo_server.py
+Then in another shell:    python examples/demo_client_http.py
+"""
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from fastmcp import Client
+from fastmcp.client.transports import StreamableHttpTransport
+
+import identity_kit as kit
+
+URL = "http://127.0.0.1:8000/mcp/"
+
+
+async def call(label, headers, tool):
+    try:
+        async with Client(StreamableHttpTransport(URL, headers=headers)) as c:
+            result = await c.call_tool(tool, {})
+        print(f"[allow]  {label}: {tool} -> {getattr(result, 'data', result)}")
+    except Exception as e:  # ToolError carries the refusal reason
+        print(f"[refuse] {label}: {tool} -> {e}")
+
+
+async def main():
+    tok = kit.mint_identity()
+    proof = kit.mint_proof(tok)
+    good = kit.headers_for(tok, proof)
+
+    await call("valid, in scope", good, "read_report")
+    await call("valid, out of scope", good, "delete_report")
+    await call("no identity", {}, "read_report")
+    await call("tampered proof", kit.headers_for(tok, proof[:-4] + "AAAA"), "read_report")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+RNV_FILE_EOF
+
+cat > 'examples/demo_server.py' <<'RNV_FILE_EOF'
+"""A runnable FastMCP server guarded by IdentityMiddleware.
+
+In-process:  imported by tests/test_demo_inprocess.py via build_server().
+Over HTTP:   `python examples/demo_server.py`  then run demo_client_http.py.
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(__file__))
+
+from fastmcp import FastMCP
+
+from rnv_mcp_identity.adapters.fastmcp_middleware import IdentityMiddleware
+from rnv_mcp_identity.policy import DocumentPolicy, IssuerRegistry
+from rnv_mcp_identity.verifier import JwtVerifier, StaticJwks
+
+import identity_kit as kit
+
+POLICY = {
+    "version": 1,
+    "grants": [
+        # The demo agent may read, but not delete.
+        {"sub": kit.SUB, "controller": kit.CTRL, "audience": kit.AUD,
+         "capabilities": ["tool:read_*"]},
+    ],
+}
+
+
+def build_server() -> FastMCP:
+    mcp = FastMCP("rnv-identity-demo")
+    mcp.add_middleware(IdentityMiddleware(
+        issuers=IssuerRegistry([kit.ISS]),
+        verifier=JwtVerifier(jwks=StaticJwks({kit.ISS: kit.ISSUER_PUBLIC})),
+        policy=DocumentPolicy.from_dict(POLICY),
+        audience=kit.AUD,
+    ))
+
+    @mcp.tool
+    def read_report() -> str:
+        """Read the quarterly report (granted to the demo agent)."""
+        return "Q2 revenue up 12 percent."
+
+    @mcp.tool
+    def delete_report() -> str:
+        """Delete the report (privileged; NOT granted to the demo agent)."""
+        return "report deleted"
+
+    return mcp
+
+
+if __name__ == "__main__":
+    build_server().run(transport="http", host="127.0.0.1", port=8000)
+RNV_FILE_EOF
+
+cat > 'examples/identity_kit.py' <<'RNV_FILE_EOF'
+"""Demo identity kit: deterministic keys and token/proof minting shared by the
+server, the HTTP client, and the in-process test. DEMO ONLY; the private keys
+are derived from fixed, public seeds and are not secret.
+
+This module is also the de facto v0 wire spec: `headers_for` shows exactly which
+headers carry the identity token and its proof, and `mint_proof` shows the `ath`
+binding.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import time
+
+import jwt
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+from rnv_mcp_identity import jwk_thumbprint
+from rnv_mcp_identity.adapters.fastmcp_middleware import IDENTITY_HEADER, PROOF_HEADER
+
+ISS = "https://issuer.demo.rnvizion.dev"
+AUD = "https://mcp.demo.rnvizion.dev"
+SUB = "wimse://demo/agent/report-bot"
+CTRL = "https://demo/principal/acme-ops"
+
+# Fixed, public seeds -> deterministic keys shared across processes. DEMO ONLY.
+ISSUER_PRIV = Ed25519PrivateKey.from_private_bytes(bytes(range(0, 32)))
+HOLDER_PRIV = Ed25519PrivateKey.from_private_bytes(bytes(range(32, 64)))
+ISSUER_PUBLIC = ISSUER_PRIV.public_key()
+
+
+def _b64url(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def holder_jwk() -> dict:
+    raw = HOLDER_PRIV.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return {"kty": "OKP", "crv": "Ed25519", "x": _b64url(raw), "alg": "EdDSA"}
+
+
+def mint_identity(*, jti: str = "demo-1", exp_delta: int = 300) -> str:
+    now = int(time.time())
+    payload = {
+        "iss": ISS, "sub": SUB, "controller": CTRL, "aud": AUD,
+        "iat": now, "exp": now + exp_delta, "jti": jti,
+        "cnf": {"jkt": jwk_thumbprint(holder_jwk())},
+    }
+    return jwt.encode(payload, ISSUER_PRIV, algorithm="EdDSA", headers={"kid": "demo-iss"})
+
+
+def mint_proof(identity_token: str) -> str:
+    now = int(time.time())
+    ath = _b64url(hashlib.sha256(identity_token.encode()).digest())
+    payload = {"ath": ath, "iat": now, "exp": now + 120, "jti": "proof-demo"}
+    return jwt.encode(payload, HOLDER_PRIV, algorithm="EdDSA",
+                      headers={"jwk": holder_jwk(), "typ": "wpt+jwt"})
+
+
+def headers_for(identity_token: str, proof: str) -> dict:
+    """The v0 wire format: token and proof ride in two request headers."""
+    return {IDENTITY_HEADER: identity_token, PROOF_HEADER: proof}
+RNV_FILE_EOF
+
 cat > '.github/workflows/ci.yml' <<'RNV_FILE_EOF'
 name: CI
 
@@ -1322,10 +1596,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install (with crypto and test extras)
+      - name: Install (crypto and test extras)
         run: pip install -e ".[dev,verify]"
       - name: Run the suite
         run: python -m pytest -q
+
+  demo:
+    name: demo (in-process)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (with FastMCP)
+        run: pip install -e ".[dev,verify,fastmcp]"
+      - name: Run the demo test
+        run: python -m pytest -q tests/test_demo_inprocess.py
 RNV_FILE_EOF
 
-echo "scaffold written. next:  pip install -e \".[dev,verify]\" && python -m pytest -q"
+echo "scaffold written. next:  pip install -e \".[dev,verify,fastmcp]\" && python -m pytest -q"
