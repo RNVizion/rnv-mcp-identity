@@ -56,21 +56,40 @@ jobs:
       - name: Run the demo test
         run: python -m pytest -q tests/test_demo_inprocess.py
 
+  sca:
+    name: dependency audit (SCA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project (crypto + FastMCP) and pip-audit
+        run: |
+          pip install -e ".[verify,fastmcp]"
+          pip install pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        # Gates on any known-vulnerable dependency. Suppress a verified
+        # non-exploitable finding with --ignore-vuln <ID> and record it as a VEX
+        # entry in SECURITY.md.
+        run: pip-audit
+
   # Single stable check to require in branch protection. Passes only if every
-  # job above succeeded, so you require "CI passed" instead of eight matrix legs
-  # whose names change whenever the matrix does.
+  # job above succeeded, so you require "CI passed" instead of the individual
+  # matrix legs whose names change whenever the matrix does.
   ci-passed:
     name: CI passed
     if: always()
-    needs: [lint, test, demo]
+    needs: [lint, test, demo, sca]
     runs-on: ubuntu-latest
     steps:
       - name: Confirm all jobs succeeded
         run: |
-          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} demo=${{ needs.demo.result }}"
+          echo "lint=${{ needs.lint.result }} test=${{ needs.test.result }} demo=${{ needs.demo.result }} sca=${{ needs.sca.result }}"
           if [ "${{ needs.lint.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
-             [ "${{ needs.demo.result }}" != "success" ]; then
+             [ "${{ needs.demo.result }}" != "success" ] || \
+             [ "${{ needs.sca.result }}" != "success" ]; then
             echo "One or more CI jobs did not succeed."
             exit 1
           fi
