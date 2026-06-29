@@ -52,7 +52,14 @@ from .verifier import (
     InMemoryReplayCache,
     jwk_thumbprint,
 )
-from .policy import IssuerRegistry, Policy, StaticPolicy, default_capability_for
+from .policy import (
+    IssuerRegistry,
+    Policy,
+    StaticPolicy,
+    DocumentPolicy,
+    capability_granted,
+    default_capability_for,
+)
 from .engine import decide
 
 __all__ = [
@@ -60,7 +67,8 @@ __all__ = [
     "AgentIdentity", "IdentityRequest", "decode_unverified",
     "Verifier", "VerifyResult", "JwtVerifier", "JwksResolver",
     "StaticJwks", "InMemoryReplayCache", "jwk_thumbprint",
-    "IssuerRegistry", "Policy", "StaticPolicy", "default_capability_for",
+    "IssuerRegistry", "Policy", "StaticPolicy", "DocumentPolicy",
+    "capability_granted", "default_capability_for",
     "decide",
 ]
 RNV_FILE_EOF
@@ -149,7 +157,7 @@ from typing import Any, Callable, Mapping
 
 from .identity import AgentIdentity, IdentityRequest, decode_unverified
 from .outcomes import Decision, Reason
-from .policy import IssuerRegistry, Policy, default_capability_for
+from .policy import IssuerRegistry, Policy, capability_granted, default_capability_for
 from .verifier import Verifier
 
 CapabilityFor = Callable[[str, Mapping[str, Any]], str]
@@ -199,7 +207,7 @@ def decide(
     )
     if granted is None:
         return Decision.deny(Reason.NO_POLICY, identity=identity)
-    if required not in granted:
+    if not capability_granted(granted, required):
         return Decision.deny(Reason.CAPABILITY_DENIED, identity=identity)
 
     # Step 4: bind + allow.
@@ -330,9 +338,15 @@ class Decision:
 RNV_FILE_EOF
 
 cat > 'src/rnv_mcp_identity/policy.py' <<'RNV_FILE_EOF'
-"""L1 issuer registry and L3 policy (SPEC section 6, steps 1 and 3)."""
+"""L1 issuer registry and L3 authorization (SPEC section 6, steps 1 and 3).
+
+The capability model is deliberately small so a grant's reach is obvious on
+inspection: a capability is `tool:<tool_name>` in v0, and a grant is either an
+exact capability or a single trailing-`*` prefix. No other glob features.
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Protocol, Tuple, runtime_checkable
 
 
@@ -349,12 +363,38 @@ class IssuerRegistry:
         self._issuers.add(issuer)
 
 
+# --- the capability model (SPEC section 6, L3) ---
+
+def default_capability_for(tool_name: str, arguments: Mapping[str, Any]) -> str:
+    """v0 capability naming convention: `tool:<tool_name>`.
+
+    The argument map is available but not part of the v0 capability; argument-
+    scoped capabilities are a later extension.
+    """
+    return f"tool:{tool_name}"
+
+
+def _grant_covers(grant: str, required: str) -> bool:
+    """A grant covers a required capability by exact match, or by a single
+    trailing-`*` prefix. `tool:*` covers the tool namespace; `*` covers all."""
+    if grant == required:
+        return True
+    if grant.endswith("*"):
+        return required.startswith(grant[:-1])
+    return False
+
+
+def capability_granted(grants: Iterable[str], required: str) -> bool:
+    """True when any grant covers the required capability. Total and obvious:
+    exact-or-prefix only, so authority is never inferred beyond what's written."""
+    return any(_grant_covers(g, required) for g in grants)
+
+
 @runtime_checkable
 class Policy(Protocol):
-    """Resolves the capability set granted to (agent, controller) for a server.
-
-    Returns None when no policy exists for the pair: the engine denies by
-    default (SPEC section 6, step 3), never allows on missing policy.
+    """Resolves the capability grants that apply to (agent, controller) for a
+    server. Returns None when no policy applies to the principal: the engine
+    denies by default (SPEC section 6, step 3), never allows on missing policy.
     """
 
     def granted_capabilities(
@@ -364,10 +404,7 @@ class Policy(Protocol):
 
 class StaticPolicy:
     """A simple, real policy: an in-memory table keyed on (sub, controller, audience).
-
-    Enough for tests and small deployments. Dynamic or external policy is a
-    later drop-in behind the same Protocol.
-    """
+    Grants may be exact capabilities or trailing-`*` prefixes."""
 
     def __init__(self, grants: Optional[Mapping[Tuple, Iterable[str]]] = None) -> None:
         self._grants: dict = {}
@@ -393,9 +430,66 @@ class StaticPolicy:
         return None
 
 
-def default_capability_for(tool_name: str, arguments: Mapping[str, Any]) -> str:
-    """v0 capability naming convention: `tool:<tool_name>` (SPEC section 10)."""
-    return f"tool:{tool_name}"
+@dataclass(frozen=True)
+class _Rule:
+    sub: Optional[str]
+    controller: Optional[str]
+    audience: Optional[str]
+    capabilities: frozenset
+
+    def selects(self, sub, controller, audience) -> bool:
+        # An absent selector matches any value; a present one must match exactly.
+        return (
+            (self.sub is None or self.sub == sub)
+            and (self.controller is None or self.controller == controller)
+            and (self.audience is None or self.audience == audience)
+        )
+
+
+class DocumentPolicy:
+    """A declarative L3 policy. Each rule has optional sub / controller / audience
+    selectors and a set of capability grants. A rule with all three is agent-
+    specific; a rule with only controller and audience grants every agent under
+    that controller. Authority is only ever added by an explicit rule.
+
+    Document shape:
+        {
+          "version": 1,
+          "grants": [
+            {"sub": "...", "controller": "...", "audience": "...",
+             "capabilities": ["tool:read_*"]},
+            {"controller": "...", "audience": "...",
+             "capabilities": ["tool:ping"]}
+          ]
+        }
+    """
+
+    def __init__(self, rules: Iterable[_Rule]) -> None:
+        self._rules = list(rules)
+
+    @classmethod
+    def from_dict(cls, doc: Mapping[str, Any]) -> "DocumentPolicy":
+        if doc.get("version") != 1:
+            raise ValueError("unsupported policy version (expected 1)")
+        rules = [
+            _Rule(
+                sub=raw.get("sub"),
+                controller=raw.get("controller"),
+                audience=raw.get("audience"),
+                capabilities=frozenset(raw.get("capabilities", ())),
+            )
+            for raw in doc.get("grants", ())
+        ]
+        return cls(rules)
+
+    def granted_capabilities(self, *, sub, controller, audience):
+        matched = [r for r in self._rules if r.selects(sub, controller, audience)]
+        if not matched:
+            return None  # no applicable policy -> NO_POLICY (deny by default)
+        out: set = set()
+        for r in matched:
+            out |= r.capabilities
+        return frozenset(out)
 RNV_FILE_EOF
 
 cat > 'src/rnv_mcp_identity/verifier.py' <<'RNV_FILE_EOF'
@@ -723,6 +817,139 @@ def test_unknown_and_deny_never_carry_allow():
         decide(call(tool="nope"), **deps(FakeVerifier(VerifyResult.success()))),
     ]
     assert all(d.outcome is not Outcome.ALLOW for d in failing)
+RNV_FILE_EOF
+
+cat > 'tests/test_policy.py' <<'RNV_FILE_EOF'
+"""L3 authorization tests: the capability matcher and the declarative policy."""
+from __future__ import annotations
+
+import base64
+import json
+
+import pytest
+
+from rnv_mcp_identity.policy import (
+    StaticPolicy,
+    DocumentPolicy,
+    capability_granted,
+    default_capability_for,
+)
+from rnv_mcp_identity.engine import decide
+from rnv_mcp_identity.identity import IdentityRequest
+from rnv_mcp_identity.outcomes import Outcome, Reason
+from rnv_mcp_identity.policy import IssuerRegistry
+from rnv_mcp_identity.verifier import VerifyResult
+
+ISS = "iss://authority"
+AUD = "aud://server"
+SUB = "sub://agent"
+CTRL = "ctrl://owner"
+GOOD = {"iss": ISS, "sub": SUB, "controller": CTRL, "aud": AUD, "jti": "j1"}
+
+
+def tok(claims) -> str:
+    seg = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+    return f"{seg({'alg': 'none'})}.{seg(claims)}.{seg({})}"
+
+
+class OkVerifier:
+    def verify(self, **_) -> VerifyResult:
+        return VerifyResult.success()
+
+
+# --- the capability matcher ---
+
+def test_exact_grant_matches():
+    assert capability_granted({"tool:read"}, "tool:read")
+
+
+def test_unrelated_capability_does_not_match():
+    assert not capability_granted({"tool:read"}, "tool:write")
+
+
+def test_namespace_wildcard_covers_any_tool():
+    assert capability_granted({"tool:*"}, "tool:anything")
+
+
+def test_prefix_wildcard_is_bounded():
+    assert capability_granted({"tool:read_*"}, "tool:read_report")
+    assert not capability_granted({"tool:read_*"}, "tool:write_report")
+
+
+def test_global_wildcard_covers_all():
+    assert capability_granted({"*"}, "tool:x")
+
+
+def test_naming_convention_is_pinned():
+    assert default_capability_for("read_report", {}) == "tool:read_report"
+
+
+# --- the declarative policy ---
+
+DOC = {
+    "version": 1,
+    "grants": [
+        {"sub": SUB, "controller": CTRL, "audience": AUD, "capabilities": ["tool:read_*"]},
+        {"controller": CTRL, "audience": AUD, "capabilities": ["tool:ping"]},
+    ],
+}
+
+
+def test_agent_specific_and_controller_rules_union():
+    g = DocumentPolicy.from_dict(DOC).granted_capabilities(sub=SUB, controller=CTRL, audience=AUD)
+    assert capability_granted(g, "tool:read_report")  # agent-specific prefix
+    assert capability_granted(g, "tool:ping")          # inherited from controller rule
+    assert not capability_granted(g, "tool:write_report")
+
+
+def test_controller_rule_applies_to_other_agents():
+    g = DocumentPolicy.from_dict(DOC).granted_capabilities(
+        sub="sub://someone-else", controller=CTRL, audience=AUD)
+    assert g is not None
+    assert capability_granted(g, "tool:ping")
+    assert not capability_granted(g, "tool:read_report")  # agent-specific rule didn't select
+
+
+def test_unselected_principal_has_no_policy():
+    g = DocumentPolicy.from_dict(DOC).granted_capabilities(
+        sub=SUB, controller="ctrl://stranger", audience=AUD)
+    assert g is None
+
+
+def test_bad_version_is_rejected():
+    with pytest.raises(ValueError):
+        DocumentPolicy.from_dict({"version": 2, "grants": []})
+
+
+# --- through the engine ---
+
+def run(policy, tool):
+    return decide(
+        IdentityRequest(tool, {}, AUD, identity_token=tok(GOOD), proof="p"),
+        issuers=IssuerRegistry([ISS]),
+        verifier=OkVerifier(),
+        policy=policy,
+    )
+
+
+def test_engine_allows_via_document_policy():
+    assert run(DocumentPolicy.from_dict(DOC), "read_report").outcome is Outcome.ALLOW
+
+
+def test_engine_denies_uncovered_capability():
+    d = run(DocumentPolicy.from_dict(DOC), "write_report")
+    assert d.outcome is Outcome.DENY and d.reason is Reason.CAPABILITY_DENIED
+
+
+def test_engine_no_policy_for_unselected_principal():
+    doc = {"version": 1, "grants": [{"sub": "sub://nobody", "audience": AUD, "capabilities": ["tool:*"]}]}
+    d = run(DocumentPolicy.from_dict(doc), "read_report")
+    assert d.outcome is Outcome.DENY and d.reason is Reason.NO_POLICY
+
+
+def test_static_policy_supports_wildcards_too():
+    p = StaticPolicy({(SUB, CTRL, AUD): {"tool:*"}})
+    assert run(p, "anything").outcome is Outcome.ALLOW
 RNV_FILE_EOF
 
 cat > 'tests/test_properties.py' <<'RNV_FILE_EOF'
