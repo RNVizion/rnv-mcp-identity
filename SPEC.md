@@ -185,6 +185,8 @@ The third gate is load-bearing. Without it, a layer that refuses everything woul
 
 The boundary is the first multi-hop: when an agent must act on a second system on behalf of the first, or delegate attenuated authority across a trust domain. That needs holder-attenuable delegation and cross-protocol binding, which the field has no unified answer for yet (AIMS's authorization section reads "TODO Security"; the AIP survey finds no single draft that unifies it). This layer stops at the single-deployment edge and marks that edge explicitly in code, so the gap is visible rather than papered over.
 
-## 10. To fill (next pass)
+## 10. Wire format (v0)
 
-- The wire format: the exact header carriage for the identity token and its proof, and how the proof binds to the request (the RFC 9421 signature base). The capability and policy model is pinned in section 6.
+The carriage is pinned by the reference demo in `examples/`. The identity token rides in the `mcp-agent-identity` request header and the proof in `mcp-agent-proof`. The proof is a WPT-style JWS whose protected header carries the holder's public JWK and whose `ath` claim is `base64url(sha256(identity_token))`, binding the proof to that exact token; the proof verifies only when its JWK thumbprints to the token's `cnf.jkt`. The capability and policy model is pinned in section 6.
+
+The planned hardening is RFC 9421 request binding: signing the HTTP method, path, and body into the proof so it attests to the specific request, not only the identity token. That tightens the L2/L4 seam and is the natural next revision.
