@@ -5,7 +5,7 @@ from typing import Any, Callable, Mapping
 
 from .identity import AgentIdentity, IdentityRequest, decode_unverified
 from .outcomes import Decision, Reason
-from .policy import IssuerRegistry, Policy, default_capability_for
+from .policy import IssuerRegistry, Policy, capability_granted, default_capability_for
 from .verifier import Verifier
 
 CapabilityFor = Callable[[str, Mapping[str, Any]], str]
@@ -55,7 +55,7 @@ def decide(
     )
     if granted is None:
         return Decision.deny(Reason.NO_POLICY, identity=identity)
-    if required not in granted:
+    if not capability_granted(granted, required):
         return Decision.deny(Reason.CAPABILITY_DENIED, identity=identity)
 
     # Step 4: bind + allow.

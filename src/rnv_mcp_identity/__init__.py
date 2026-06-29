@@ -15,7 +15,14 @@ from .verifier import (
     InMemoryReplayCache,
     jwk_thumbprint,
 )
-from .policy import IssuerRegistry, Policy, StaticPolicy, default_capability_for
+from .policy import (
+    IssuerRegistry,
+    Policy,
+    StaticPolicy,
+    DocumentPolicy,
+    capability_granted,
+    default_capability_for,
+)
 from .engine import decide
 
 __all__ = [
@@ -23,6 +30,7 @@ __all__ = [
     "AgentIdentity", "IdentityRequest", "decode_unverified",
     "Verifier", "VerifyResult", "JwtVerifier", "JwksResolver",
     "StaticJwks", "InMemoryReplayCache", "jwk_thumbprint",
-    "IssuerRegistry", "Policy", "StaticPolicy", "default_capability_for",
+    "IssuerRegistry", "Policy", "StaticPolicy", "DocumentPolicy",
+    "capability_granted", "default_capability_for",
     "decide",
 ]
