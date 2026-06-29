@@ -25,6 +25,9 @@ or commit, and the impact as you see it.
 - A coordinated fix: the maintainer will work on a remedy and agree on a disclosure
   timeline with you before any public disclosure.
 - Credit for the report, if you'd like it.
+- Public disclosure once a fix is available: resolved vulnerabilities are published
+  as GitHub Security Advisories (GHSA) on this repository, so downstream users can
+  see what was found, which versions were affected, and how it was fixed.
 
 ## A note for deployers
 
