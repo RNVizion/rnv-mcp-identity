@@ -6,14 +6,23 @@ and is only imported when the `fastmcp` extra is installed.
 """
 from .outcomes import Outcome, Reason, Decision
 from .identity import AgentIdentity, IdentityRequest, decode_unverified
-from .verifier import Verifier, VerifyResult, JwtVerifier
+from .verifier import (
+    Verifier,
+    VerifyResult,
+    JwtVerifier,
+    JwksResolver,
+    StaticJwks,
+    InMemoryReplayCache,
+    jwk_thumbprint,
+)
 from .policy import IssuerRegistry, Policy, StaticPolicy, default_capability_for
 from .engine import decide
 
 __all__ = [
     "Outcome", "Reason", "Decision",
     "AgentIdentity", "IdentityRequest", "decode_unverified",
-    "Verifier", "VerifyResult", "JwtVerifier",
+    "Verifier", "VerifyResult", "JwtVerifier", "JwksResolver",
+    "StaticJwks", "InMemoryReplayCache", "jwk_thumbprint",
     "IssuerRegistry", "Policy", "StaticPolicy", "default_capability_for",
     "decide",
 ]
