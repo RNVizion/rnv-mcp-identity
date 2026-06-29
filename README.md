@@ -6,7 +6,9 @@
 
 ## What this is
 
-Most MCP servers running in the wild have no way to say who is calling them, or what that caller is allowed to do. A recent survey of roughly 2,000 servers found every one lacked authentication. This is a small, deterministic reference implementation for the missing layer: an MCP server (or middleware) that attaches a verifiable agent identity, checks it, and authorizes what the agent may do, refusing cleanly when it can't.
+MCP has an authorization spec: servers act as OAuth 2.1 resource servers, and a user delegates access to a client. What it doesn't answer is who the non-human caller is. OAuth's PKCE protects the token exchange; it doesn't authenticate the agent itself, or say who controls it. Adoption of even the existing layer is thin: as of 2026, only about 8.5% of MCP servers implement the mandatory OAuth 2.1, while the public registry has grown past 9,400 servers.
+
+This is a small, deterministic reference implementation for the layer above that gap: an MCP server (or middleware) that attaches a verifiable agent identity, checks it, and authorizes what the agent may do, composed on top of MCP's OAuth resource-server model, refusing cleanly when it can't.
 
 It's the running-code half of a larger proposal, **AIII (the Artificial Intelligence Identification Initiative)**. The narrative front door lives here: https://rnvizion.dev/aiii
 
