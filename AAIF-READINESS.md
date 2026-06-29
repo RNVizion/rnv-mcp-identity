@@ -162,10 +162,10 @@ new project, and it's exactly what the growth plan is for.
 
 The plan targets the three unmet criteria in order of leverage.
 
-1. **Earn a credible adoption story.** Stand up a public, live demo deployment and
-   publish the build narrative so others can adopt the pattern. Pursue at least a
-   handful of real integrations into MCP servers and report them honestly,
-   counts, not adjectives.
+1. **Earn a credible adoption story.** The live demo deployment is up ([Identity
+   Gate](https://huggingface.co/spaces/RNVizion/rnv-mcp-identity)); next, publish the build narrative so others can adopt the
+   pattern, and pursue a handful of real integrations into MCP servers, reported
+   honestly, counts, not adjectives.
 2. **Open the project to contributors.** Ship GOVERNANCE.md, CONTRIBUTING.md, and
    OWNERS.md that define how someone earns the commit bit, then label
    good-first-issues and review external PRs promptly. Diverse maintainership is
@@ -186,10 +186,10 @@ Governance and licensing (done this pass):
 - [x] CONTRIBUTING.md: how to contribute code and propose spec changes
 - [x] OWNERS.md: current (and future emeritus) committers
 - [x] SECURITY.md: how to report vulnerabilities
-- [x] README points at the spec and the runnable in-repo demo (a live public deployment remains an adoption item below)
+- [x] README points at the spec, the runnable in-repo demo, and the live public deployment below
 
 Adoption and community (must, takes time):
-- [ ] A live, public demo deployment
+- [x] A live, public demo deployment: [Identity Gate on Hugging Face Spaces](https://huggingface.co/spaces/RNVizion/rnv-mcp-identity), running the released v0.1.0 engine
 - [ ] Documented real-world integrations, reported by count
 - [ ] First external merged contribution
 - [ ] At least one committer from a second organization (Impact-stage signal)
