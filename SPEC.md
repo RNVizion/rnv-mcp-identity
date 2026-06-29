@@ -156,6 +156,14 @@ After step 2 the identity is verified: `sub` and `controller` are now trusted.
 
 The split is the spec's spine: `unknown` means the layer couldn't establish who is calling; `deny` means it could, and a check failed. Neither ever becomes `allow` by default.
 
+### Capability and policy model (L3)
+
+The required capability for a tool call follows one convention in v0: `tool:<tool_name>`. The argument map is available to the resolver but is not part of the v0 capability; argument-scoped capabilities are a later extension.
+
+A grant is either an exact capability or a single trailing-`*` prefix: `tool:read_report` (exact), `tool:read_*` (prefix), `tool:*` (the whole `tool` namespace), `*` (everything; discouraged, never implicit). Matching is exact-or-prefix only, with no other glob features, so a grant's reach is obvious on inspection.
+
+Policy is a declarative document of rules. Each rule carries an optional `sub`, `controller`, and `audience` selector and a set of capability grants. A rule selects a request when every present selector equals the request's value; an absent selector matches any. A rule with all three is agent-specific; a rule with only `controller` and `audience` grants every agent under that controller. The capabilities granted to a principal are the union over all selecting rules. If no rule selects the principal, the outcome is `no_policy` (deny by default); if rules select but none covers the required capability, the outcome is `capability_denied`. Authority is only ever added by an explicit rule.
+
 ## 7. Eval gates
 
 Correctness is measured in CI, not asserted. Three gates, mirroring the retrieval project's harness:
@@ -179,5 +187,4 @@ The boundary is the first multi-hop: when an agent must act on a second system o
 
 ## 10. To fill (next pass)
 
-- The capability naming convention for L3 scopes, and the policy format that maps `(sub, controller, aud)` to a granted capability set.
-- The wire format: the exact header carriage for the identity token and its proof, and how the proof binds to the request (the RFC 9421 signature base).
+- The wire format: the exact header carriage for the identity token and its proof, and how the proof binds to the request (the RFC 9421 signature base). The capability and policy model is pinned in section 6.
