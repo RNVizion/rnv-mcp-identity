@@ -42,14 +42,23 @@ and is only imported when the `fastmcp` extra is installed.
 """
 from .outcomes import Outcome, Reason, Decision
 from .identity import AgentIdentity, IdentityRequest, decode_unverified
-from .verifier import Verifier, VerifyResult, JwtVerifier
+from .verifier import (
+    Verifier,
+    VerifyResult,
+    JwtVerifier,
+    JwksResolver,
+    StaticJwks,
+    InMemoryReplayCache,
+    jwk_thumbprint,
+)
 from .policy import IssuerRegistry, Policy, StaticPolicy, default_capability_for
 from .engine import decide
 
 __all__ = [
     "Outcome", "Reason", "Decision",
     "AgentIdentity", "IdentityRequest", "decode_unverified",
-    "Verifier", "VerifyResult", "JwtVerifier",
+    "Verifier", "VerifyResult", "JwtVerifier", "JwksResolver",
+    "StaticJwks", "InMemoryReplayCache", "jwk_thumbprint",
     "IssuerRegistry", "Policy", "StaticPolicy", "default_capability_for",
     "decide",
 ]
@@ -389,18 +398,30 @@ def default_capability_for(tool_name: str, arguments: Mapping[str, Any]) -> str:
 RNV_FILE_EOF
 
 cat > 'src/rnv_mcp_identity/verifier.py' <<'RNV_FILE_EOF'
-"""L2 verification (SPEC section 6, step 2). The crypto seam.
+"""L2 verification (SPEC section 6, step 2): the crypto.
 
 The Verifier owns every deny-reason in step 2. The engine never inspects a
-signature itself; it asks the Verifier and maps the result. This keeps the
-crypto in one swappable place and the engine pure.
+signature itself; it asks the Verifier and maps the result. `JwtVerifier` is
+the real implementation; it needs the `verify` extra:
+
+    pip install "rnv-mcp-identity[verify]"
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Protocol, runtime_checkable
 
 from .outcomes import Reason
+
+try:  # the core install stays dependency-free; crypto is opt-in
+    import jwt
+except ImportError:  # pragma: no cover
+    jwt = None  # type: ignore
+
+DEFAULT_ALGORITHMS = ("EdDSA", "ES256", "RS256")
 
 
 @dataclass(frozen=True)
@@ -431,24 +452,157 @@ class Verifier(Protocol):
     ) -> VerifyResult: ...
 
 
-class JwtVerifier:
-    """Skeleton JWKS + proof-of-possession verifier.
+@runtime_checkable
+class JwksResolver(Protocol):
+    """Resolves an issuer's public verifying key."""
 
-    TODO(P2-2): implement, in order, each failure short-circuiting:
-      1. issuer signature against JWKS   -> SIGNATURE_INVALID
-      2. nbf / exp window                -> TOKEN_NOT_YET_VALID / TOKEN_EXPIRED
-      3. aud == audience                 -> AUDIENCE_MISMATCH
-      4. proof against cnf key (RFC 9421)-> PROOF_INVALID
-      5. jti replay, if enabled          -> REPLAY_DETECTED
-    Reuses WIMSE WPT / EAT / RFC 9421; no new crypto (SPEC section 3).
+    def public_key_for(self, *, issuer: Optional[str], kid: Optional[str]) -> Optional[Any]: ...
+
+
+class StaticJwks:
+    """In-memory issuer -> public key map. A real JWKS-over-HTTP resolver is a
+    later drop-in behind the same Protocol."""
+
+    def __init__(self, keys: Optional[Mapping[str, Any]] = None) -> None:
+        self._by_issuer = dict(keys or {})
+
+    def public_key_for(self, *, issuer: Optional[str], kid: Optional[str] = None) -> Optional[Any]:
+        return self._by_issuer.get(issuer) if issuer else None
+
+    def add(self, issuer: str, key: Any) -> None:
+        self._by_issuer[issuer] = key
+
+
+class InMemoryReplayCache:
+    """Tracks seen identity `jti` values. Process-local; a shared store is a
+    later drop-in. v0 does not evict on expiry."""
+
+    def __init__(self) -> None:
+        self._seen: set = set()
+
+    def seen(self, jti: str, exp: Optional[int] = None) -> bool:
+        if jti in self._seen:
+            return True
+        self._seen.add(jti)
+        return False
+
+
+def _b64url(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
+def jwk_thumbprint(jwk: Mapping[str, Any]) -> str:
+    """RFC 7638 JWK thumbprint over the canonical required members."""
+    kty = jwk["kty"]
+    if kty == "OKP":
+        members = {"crv": jwk["crv"], "kty": "OKP", "x": jwk["x"]}
+    elif kty == "EC":
+        members = {"crv": jwk["crv"], "kty": "EC", "x": jwk["x"], "y": jwk["y"]}
+    elif kty == "RSA":
+        members = {"e": jwk["e"], "kty": "RSA", "n": jwk["n"]}
+    else:
+        raise ValueError(f"unsupported kty: {kty}")
+    canonical = json.dumps(members, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return _b64url(hashlib.sha256(canonical).digest())
+
+
+class JwtVerifier:
+    """Holder-of-key JWT verifier implementing SPEC section 6, step 2.
+
+    Order, each failure short-circuiting:
+      1. issuer signature against the resolved key  -> SIGNATURE_INVALID
+      2. nbf / exp window                           -> TOKEN_NOT_YET_VALID / TOKEN_EXPIRED
+      3. aud == audience                            -> AUDIENCE_MISMATCH
+      4. proof of possession against cnf            -> PROOF_INVALID
+      5. jti replay, when a cache is configured     -> REPLAY_DETECTED
+
+    No new crypto: signature and proof are JWS (pyjwt); the proof is a WPT-style
+    token whose public JWK must thumbprint-match the token's `cnf.jkt` (RFC 7638)
+    and which binds to this exact identity token via `ath` (RFC 9449 style).
     """
 
-    def __init__(self, *, jwks_resolver=None, replay_cache=None) -> None:
-        self._jwks_resolver = jwks_resolver
+    def __init__(
+        self,
+        *,
+        jwks: JwksResolver,
+        algorithms: tuple = DEFAULT_ALGORITHMS,
+        require_proof: bool = True,
+        replay_cache: Optional[InMemoryReplayCache] = None,
+    ) -> None:
+        if jwt is None:  # pragma: no cover
+            raise RuntimeError(
+                "JwtVerifier needs the 'verify' extra: pip install \"rnv-mcp-identity[verify]\""
+            )
+        self._jwks = jwks
+        self._algorithms = tuple(algorithms)
+        self._require_proof = require_proof
         self._replay_cache = replay_cache
 
     def verify(self, *, token, proof, claims, audience) -> VerifyResult:
-        raise NotImplementedError("JwtVerifier is implemented in P2-2")
+        # Resolve the issuer's key (issuer recognition already happened at L1).
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.InvalidTokenError:
+            return VerifyResult.failure(Reason.SIGNATURE_INVALID)
+        key = self._jwks.public_key_for(issuer=claims.get("iss"), kid=header.get("kid"))
+        if key is None:
+            # Recognized issuer but no usable key: cannot establish authenticity.
+            return VerifyResult.failure(Reason.SIGNATURE_INVALID)
+
+        # 1 + 2 + 3: signature, then temporal, then audience.
+        try:
+            verified = jwt.decode(
+                token,
+                key,
+                algorithms=list(self._algorithms),
+                audience=audience,
+                options={"require": ["exp", "iat", "aud"], "verify_aud": True},
+            )
+        except jwt.ExpiredSignatureError:
+            return VerifyResult.failure(Reason.TOKEN_EXPIRED)
+        except jwt.ImmatureSignatureError:
+            return VerifyResult.failure(Reason.TOKEN_NOT_YET_VALID)
+        except jwt.InvalidAudienceError:
+            return VerifyResult.failure(Reason.AUDIENCE_MISMATCH)
+        except jwt.InvalidTokenError:
+            return VerifyResult.failure(Reason.SIGNATURE_INVALID)
+
+        # 4: proof of possession.
+        if self._require_proof:
+            failed = self._verify_proof(token=token, proof=proof, verified=verified)
+            if failed is not None:
+                return failed
+
+        # 5: replay.
+        if self._replay_cache is not None:
+            jti = verified.get("jti")
+            if jti is None or self._replay_cache.seen(jti, verified.get("exp")):
+                return VerifyResult.failure(Reason.REPLAY_DETECTED)
+
+        return VerifyResult.success()
+
+    def _verify_proof(self, *, token, proof, verified) -> Optional[VerifyResult]:
+        cnf = verified.get("cnf") or {}
+        jkt = cnf.get("jkt")
+        if not jkt or not proof:
+            return VerifyResult.failure(Reason.PROOF_INVALID)
+        try:
+            jwk = jwt.get_unverified_header(proof).get("jwk")
+            if not jwk or jwk_thumbprint(jwk) != jkt:
+                return VerifyResult.failure(Reason.PROOF_INVALID)
+            pop_key = jwt.PyJWK.from_dict(jwk).key
+            proof_claims = jwt.decode(
+                proof,
+                pop_key,
+                algorithms=list(self._algorithms),
+                options={"require": ["ath"], "verify_aud": False},
+            )
+        except Exception:
+            return VerifyResult.failure(Reason.PROOF_INVALID)
+        expected_ath = _b64url(hashlib.sha256(token.encode("utf-8")).digest())
+        if proof_claims.get("ath") != expected_ath:
+            return VerifyResult.failure(Reason.PROOF_INVALID)
+        return None
 RNV_FILE_EOF
 
 cat > 'tests/test_engine.py' <<'RNV_FILE_EOF'
@@ -570,4 +724,204 @@ def test_unknown_and_deny_never_carry_allow():
     assert all(d.outcome is not Outcome.ALLOW for d in failing)
 RNV_FILE_EOF
 
-echo "scaffold written. next:  pip install -e \".[dev]\" && python -m pytest -q"
+cat > 'tests/test_verifier.py' <<'RNV_FILE_EOF'
+"""Real-key L2 tests (SPEC section 6, step 2). Needs the `verify` extra."""
+from __future__ import annotations
+
+import base64
+import hashlib
+import time
+
+import pytest
+
+jwt = pytest.importorskip("jwt")
+pytest.importorskip("cryptography")
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+from rnv_mcp_identity.verifier import (
+    JwtVerifier,
+    StaticJwks,
+    InMemoryReplayCache,
+    jwk_thumbprint,
+)
+from rnv_mcp_identity.outcomes import Outcome, Reason
+from rnv_mcp_identity.engine import decide
+from rnv_mcp_identity.identity import IdentityRequest
+from rnv_mcp_identity.policy import IssuerRegistry, StaticPolicy
+
+ISS = "https://control-plane.example"
+AUD = "https://mcp.example/finance"
+SUB = "wimse://example/agent/report-bot"
+CTRL = "https://example/principal/acme-ops"
+
+
+def _b64url(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def ed() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.generate()
+
+
+def pub_jwk(priv: Ed25519PrivateKey) -> dict:
+    raw = priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    return {"kty": "OKP", "crv": "Ed25519", "x": _b64url(raw), "alg": "EdDSA"}
+
+
+def mint_id(issuer_priv, holder_jwk, *, aud=AUD, exp_delta=300, nbf=None, jti="id-1"):
+    now = int(time.time())
+    payload = {
+        "iss": ISS, "sub": SUB, "controller": CTRL, "aud": aud,
+        "iat": now, "exp": now + exp_delta, "jti": jti,
+        "cnf": {"jkt": jwk_thumbprint(holder_jwk)},
+    }
+    if nbf is not None:
+        payload["nbf"] = nbf
+    return jwt.encode(payload, issuer_priv, algorithm="EdDSA", headers={"kid": "iss-1"})
+
+
+def mint_proof(holder_priv, holder_jwk, token, *, ath=None):
+    now = int(time.time())
+    a = ath if ath is not None else _b64url(hashlib.sha256(token.encode()).digest())
+    payload = {"ath": a, "iat": now, "exp": now + 120, "jti": "proof-1"}
+    return jwt.encode(payload, holder_priv, algorithm="EdDSA",
+                      headers={"jwk": holder_jwk, "typ": "wpt+jwt"})
+
+
+def verifier(issuer_priv, **kw) -> JwtVerifier:
+    return JwtVerifier(jwks=StaticJwks({ISS: issuer_priv.public_key()}), **kw)
+
+
+def unverified(token) -> dict:
+    return jwt.decode(token, options={"verify_signature": False})
+
+
+# --- the good path ---
+
+def test_valid_token_and_proof_succeeds():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(hk, hj, tok)
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.ok
+
+
+# --- step 1: signature ---
+
+def test_tampered_signature_is_signature_invalid():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(hk, hj, tok)
+    bad = tok[:-3] + ("aaa" if not tok.endswith("aaa") else "bbb")
+    r = verifier(ik).verify(token=bad, proof=pf, claims=unverified(tok), audience=AUD)
+    assert (r.ok, r.reason) == (False, Reason.SIGNATURE_INVALID)
+
+
+def test_wrong_issuer_key_is_signature_invalid():
+    ik, other, hk = ed(), ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(hk, hj, tok)
+    r = verifier(other).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.SIGNATURE_INVALID
+
+
+# --- step 2: temporal ---
+
+def test_expired_token():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj, exp_delta=-10); pf = mint_proof(hk, hj, tok)
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.TOKEN_EXPIRED
+
+
+def test_not_yet_valid_token():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj, nbf=int(time.time()) + 3600); pf = mint_proof(hk, hj, tok)
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.TOKEN_NOT_YET_VALID
+
+
+# --- step 3: audience ---
+
+def test_wrong_audience():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj, aud="https://mcp.example/other"); pf = mint_proof(hk, hj, tok)
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.AUDIENCE_MISMATCH
+
+
+# --- step 4: proof of possession ---
+
+def test_missing_proof_is_proof_invalid():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj)
+    r = verifier(ik).verify(token=tok, proof=None, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.PROOF_INVALID
+
+
+def test_proof_with_unbound_key_is_proof_invalid():
+    ik, hk, wrong = ed(), ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj)                      # cnf binds to hk
+    pf = mint_proof(wrong, pub_jwk(wrong), tok)  # but proof signed by a different key
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.PROOF_INVALID
+
+
+def test_proof_bound_to_other_token_is_proof_invalid():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj)
+    other = mint_id(ik, hj, jti="id-2")
+    pf = mint_proof(hk, hj, other)            # ath binds to a different token
+    r = verifier(ik).verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert r.reason is Reason.PROOF_INVALID
+
+
+def test_proof_not_required_allows_without_proof():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj)
+    r = verifier(ik, require_proof=False).verify(
+        token=tok, proof=None, claims=unverified(tok), audience=AUD)
+    assert r.ok
+
+
+# --- step 5: replay ---
+
+def test_replay_detected_on_second_use():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(hk, hj, tok)
+    v = verifier(ik, replay_cache=InMemoryReplayCache())
+    first = v.verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    second = v.verify(token=tok, proof=pf, claims=unverified(tok), audience=AUD)
+    assert first.ok
+    assert second.reason is Reason.REPLAY_DETECTED
+
+
+# --- end to end through the engine ---
+
+def test_engine_allows_valid_with_real_verifier():
+    ik, hk = ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(hk, hj, tok)
+    req = IdentityRequest("read_report", {}, AUD, identity_token=tok, proof=pf)
+    d = decide(
+        req,
+        issuers=IssuerRegistry([ISS]),
+        verifier=verifier(ik),
+        policy=StaticPolicy({(SUB, CTRL, AUD): {"tool:read_report"}}),
+    )
+    assert d.outcome is Outcome.ALLOW
+    assert d.identity.sub == SUB
+
+
+def test_engine_denies_bad_proof_with_real_verifier():
+    ik, hk, wrong = ed(), ed(), ed(); hj = pub_jwk(hk)
+    tok = mint_id(ik, hj); pf = mint_proof(wrong, pub_jwk(wrong), tok)
+    req = IdentityRequest("read_report", {}, AUD, identity_token=tok, proof=pf)
+    d = decide(
+        req,
+        issuers=IssuerRegistry([ISS]),
+        verifier=verifier(ik),
+        policy=StaticPolicy({(SUB, CTRL, AUD): {"tool:read_report"}}),
+    )
+    assert d.outcome is Outcome.DENY
+    assert d.reason is Reason.PROOF_INVALID
+RNV_FILE_EOF
+
+echo "scaffold written. next:  pip install -e \".[dev,verify]\" && python -m pytest -q"
