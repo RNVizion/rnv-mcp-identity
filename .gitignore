@@ -32,5 +32,6 @@ env/
 Thumbs.db
 
 # Build/delivery tooling (not part of the package)
-bootstrap_scaffold.sh
+bs.sh
+release.sh
 *.zip
