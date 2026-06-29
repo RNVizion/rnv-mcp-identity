@@ -1707,7 +1707,7 @@ RFC 7638 thumbprints, and EAT-style attestation. The project's own contribution
 is the composition, the per-tool capability model, and the resolve/refuse/unknown
 semantics, expressed as MCP middleware.
 
-This project is the reference-implementation arm of a broader initiative (AIII).
+This project is the reference-implementation arm of a broader initiative, AIII (the Artificial Intelligence Identification Initiative).
 Layers L4 and L5, structural enforcement and cross-organization behavioral trust,
 are deliberately **out of scope** for this codebase: they cannot be resolved by a
 single operator. That boundary is precisely why a neutral foundation matters, and
@@ -1723,7 +1723,7 @@ Each is answered here as it stands today.
 
 | Required field | Current answer |
 |---|---|
-| **Project name** | rnv-mcp-identity (working name; may be renamed before submission) |
+| **Project name** | rnv-mcp-identity (confirmed; the public repository name) |
 | **Description: what it does** | An L1–L3 identity and authorization layer for MCP servers; resolve, refuse, or mark unknown on every tool call |
 | **Description: why valuable** | A large share of deployed MCP servers accept tool calls without verifying caller identity. This is the missing, reusable safety pattern: holder-of-key agent identity plus deny-by-default per-tool authorization |
 | **Origin and history** | Built under the RNVizion banner as a reference implementation composing IETF/WIMSE/OAuth building blocks; spec-first, then implementation, then a runnable demo |
@@ -1732,7 +1732,7 @@ Each is answered here as it stands today.
 | **Example use cases + evidence of adoption** | Use cases below are concrete; **adoption evidence is nascent and stated honestly as a gap** |
 | **TC sponsor (if identified)** | None yet. Securing one is a growth-plan milestone |
 | **OSI-approved permissive license** | Apache-2.0 |
-| **Public repository** | github.com/RNVizion/rnv-mcp-identity (to confirm/finalize) |
+| **Public repository** | github.com/RNVizion/rnv-mcp-identity |
 | **Automated validation and delivery** | GitHub Actions: a test matrix (Linux + Windows, Python 3.10–3.12) plus a separate FastMCP demo job; the suite includes named eval gates for correct resolution, correct refusal, and no false refusal |
 | **Release methodology** | SemVer with tagged releases; pre-1.0 while the wire format stabilizes (documented in the spec) |
 | **Public contribution process for specs** | SPEC.md is versioned in-repo; changes proceed by pull request with rationale. Formalized in CONTRIBUTING.md (scheduled) |
@@ -1742,7 +1742,7 @@ Each is answered here as it stands today.
 | **Leadership and decision-making** | Currently single-maintainer; governance defines the path to shared, merit-based maintainership (scheduled in GOVERNANCE.md) |
 | **Documented governance (GOVERNANCE.md)** | Scheduled (see checklist) |
 | **Official communication channels** | GitHub Issues and Discussions to start; no chat channel yet |
-| **Project website** | Planned at rnvizion.dev/aiii (not yet live) |
+| **Project website** | Live at rnvizion.dev/aiii |
 | **Social accounts** | RNVizion presence on dev.to and LinkedIn (optional field) |
 | **Existing financial sponsorship** | None |
 | **Infrastructure needs** | None from the foundation at this stage; CI runs on GitHub-hosted runners |
@@ -2081,7 +2081,7 @@ Agentic JWT adds agent claims to JWTs but can't attenuate authority without mint
 
 The frontier is the cross-domain, multi-hop layer, and the drafts say so plainly. AIMS composes WIMSE, SPIFFE, and OAuth, but its authorization section reads "TODO Security." A survey of the field (the AIP preprint) finds that no single draft yet provides holder-attenuable delegation, cross-protocol bindings, and provenance in one protocol.
 
-That frontier is L4 and L5. It's exactly where our scope stops, and where the larger AIII argument lives.
+That frontier is L4 and L5. It's exactly where our scope stops, and where the larger AIII (Artificial Intelligence Identification Initiative) argument lives.
 
 ## What this means for the build
 
@@ -2116,7 +2116,7 @@ An unknown caller never acts. That rule is the whole project: *resolve or refuse
 never guess.*
 
 > Status: reference implementation, pre-1.0, Apache-2.0. This is the
-> reference-implementation arm of the AIII initiative. It composes on existing
+> reference-implementation arm of AIII, the Artificial Intelligence Identification Initiative (rnvizion.dev/aiii). It composes on existing
 > standards (the MCP authorization model, WIMSE workload identity, RFC 7800 key
 > confirmation, RFC 7638 thumbprints, EAT attestation) rather than replacing them.
 
@@ -2176,7 +2176,9 @@ AAIF-READINESS.md for an honest account of where it stands.
 RNV_FILE_EOF
 
 cat > 'ROADMAP.md' <<'RNV_FILE_EOF'
-# AIII — Build Roadmap
+# AIII Build Roadmap
+
+*AIII is the Artificial Intelligence Identification Initiative; rnv-mcp-identity is its reference implementation.*
 
 From a draft proposal to a working MCP identity layer, submitted where MCP already lives.
 
@@ -2325,7 +2327,7 @@ It explicitly does **not** cover:
 - **L4, structural enforcement:** holding an agent to its scope across systems.
 - **L5, cross-organizational behavioral trust:** trusting an agent beyond the deployment that made it.
 
-L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 9). Closing it is the AIII argument, not this code.
+L4 and L5 are out of scope on purpose. No single deployment can operate cross-organizational trust, so this layer marks the boundary and stops (see section 9). Closing it is the AIII (Artificial Intelligence Identification Initiative) argument, not this code.
 
 ## 2. Position in the MCP stack
 
