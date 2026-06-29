@@ -18,6 +18,14 @@ Run the full suite:
 python -m pytest -q
 ```
 
+Lint and security static analysis run in CI and can be run locally:
+
+```
+pip install -e ".[lint]"
+ruff check .
+bandit -c pyproject.toml -r src
+```
+
 The suite runs on Linux and Windows across Python 3.10 through 3.12 in CI, plus a
 separate FastMCP demo job.
 

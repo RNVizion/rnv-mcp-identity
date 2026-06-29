@@ -6,6 +6,21 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: lint + static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install lint tools
+        run: pip install -e ".[lint]"
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Bandit (security static analysis)
+        run: bandit -c pyproject.toml -r src
+
   test:
     name: ${{ matrix.os }} py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}

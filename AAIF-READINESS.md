@@ -87,7 +87,7 @@ Each is answered here as it stands today.
 | **Release methodology** | SemVer with tagged releases; pre-1.0 while the wire format stabilizes (documented in the spec) |
 | **Public contribution process for specs** | SPEC.md is versioned in-repo; changes proceed by pull request with rationale. Formalized in CONTRIBUTING.md (scheduled) |
 | **Public issue tracker** | GitHub Issues |
-| **External dependencies (and licenses)** | Core runtime: **zero dependencies.** Optional extras: PyJWT (MIT), cryptography (Apache-2.0 / BSD), FastMCP (Apache-2.0). Dev-only: pytest (MIT), Hypothesis (MPL-2.0). *Licenses to be re-verified at submission time.* |
+| **External dependencies (and licenses)** | Core runtime: **zero dependencies.** Optional extras: PyJWT (MIT), cryptography (Apache-2.0 OR BSD-3-Clause), FastMCP (Apache-2.0). Dev-only: pytest (MIT), Hypothesis (MPL-2.0). Verified from installed package metadata on 2026-06-29; all permissive and Apache-2.0-compatible. |
 | **Core maintainers** | Christian Smith (sole maintainer) |
 | **Leadership and decision-making** | Currently single-maintainer; governance defines the path to shared, merit-based maintainership (scheduled in GOVERNANCE.md) |
 | **Documented governance (GOVERNANCE.md)** | Scheduled (see checklist) |
@@ -195,10 +195,10 @@ Adoption and community (must, takes time):
 - [ ] At least one committer from a second organization (Impact-stage signal)
 
 Process polish (should):
-- [ ] Tagged SemVer release
-- [ ] Published roadmap
-- [ ] OpenSSF Best Practices badge
-- [ ] Re-verify all dependency licenses
+- [ ] Tagged SemVer release (v0.1.0 prepared; tag on next push)
+- [x] Published roadmap (ROADMAP.md, in the public repo)
+- [ ] OpenSSF Best Practices badge (self-assessment drafted; submission pending)
+- [x] Re-verify all dependency licenses (verified 2026-06-29)
 
 When the governance musts are green and the adoption musts show real, honest
 progress, and a TC sponsor is in hand, the proposal moves from this dossier into

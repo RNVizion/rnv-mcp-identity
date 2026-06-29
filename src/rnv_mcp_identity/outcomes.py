@@ -24,8 +24,9 @@ class Reason(str, Enum):
     ISSUER_UNKNOWN = "issuer_unknown"
     # verify -> deny
     SIGNATURE_INVALID = "signature_invalid"
-    TOKEN_EXPIRED = "token_expired"
-    TOKEN_NOT_YET_VALID = "token_not_yet_valid"
+    # The Reason values below are status strings, not credentials.
+    TOKEN_EXPIRED = "token_expired"  # nosec B105
+    TOKEN_NOT_YET_VALID = "token_not_yet_valid"  # nosec B105
     AUDIENCE_MISMATCH = "audience_mismatch"
     PROOF_INVALID = "proof_invalid"
     REPLAY_DETECTED = "replay_detected"

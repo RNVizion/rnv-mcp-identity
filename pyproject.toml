@@ -1,6 +1,6 @@
 [project]
 name = "rnv-mcp-identity"
-version = "0.0.1"
+version = "0.1.0"
 description = "An identity-and-authorization layer for MCP servers: resolve or refuse, never guess."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -11,6 +11,7 @@ dependencies = []
 fastmcp = ["fastmcp>=2.9"]
 verify = ["pyjwt>=2.8", "cryptography>=42"]
 dev = ["pytest>=8", "hypothesis>=6"]
+lint = ["ruff>=0.6", "bandit>=1.7"]
 
 [build-system]
 requires = ["hatchling"]
@@ -22,3 +23,18 @@ packages = ["src/rnv_mcp_identity"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files favor compact fixtures and the importorskip-then-import pattern.
+"tests/*" = ["E401", "E402", "E501", "E702", "E731"]
+
+[tool.bandit]
+# Scan the library; tests and examples use demo-only key material by design.
+exclude_dirs = ["tests", "examples"]

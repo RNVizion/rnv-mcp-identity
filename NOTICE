@@ -1,0 +1,9 @@
+rnv-mcp-identity
+Copyright 2026 Christian Smith (RNVizion)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It composes on, and is designed to interoperate with, open standards and
+projects including the Model Context Protocol, IETF/WIMSE workload identity,
+RFC 7800 (key confirmation), RFC 7638 (JWK thumbprints), and EAT attestation.
+Those specifications and projects are the property of their respective authors.
