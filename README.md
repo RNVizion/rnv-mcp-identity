@@ -17,6 +17,8 @@ never guess.*
 > standards (the MCP authorization model, WIMSE workload identity, RFC 7800 key
 > confirmation, RFC 7638 thumbprints, EAT attestation) rather than replacing them.
 
+**Live demo:** [Identity Gate on Hugging Face Spaces](https://huggingface.co/spaces/RNVizion/rnv-mcp-identity), running this engine on the released v0.1.0.
+
 ## What's here
 
 - **`src/rnv_mcp_identity/`** — the library: a framework-agnostic decision engine
