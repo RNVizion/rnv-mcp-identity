@@ -11,7 +11,7 @@ mkdir -p 'tests'
 cat > 'pyproject.toml' <<'RNV_FILE_EOF'
 [project]
 name = "rnv-mcp-identity"
-version = "0.0.1"
+version = "0.1.0"
 description = "An identity-and-authorization layer for MCP servers: resolve or refuse, never guess."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,7 @@ dependencies = []
 fastmcp = ["fastmcp>=2.9"]
 verify = ["pyjwt>=2.8", "cryptography>=42"]
 dev = ["pytest>=8", "hypothesis>=6"]
+lint = ["ruff>=0.6", "bandit>=1.7"]
 
 [build-system]
 requires = ["hatchling"]
@@ -33,6 +34,21 @@ packages = ["src/rnv_mcp_identity"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files favor compact fixtures and the importorskip-then-import pattern.
+"tests/*" = ["E401", "E402", "E501", "E702", "E731"]
+
+[tool.bandit]
+# Scan the library; tests and examples use demo-only key material by design.
+exclude_dirs = ["tests", "examples"]
 RNV_FILE_EOF
 
 cat > 'src/rnv_mcp_identity/__init__.py' <<'RNV_FILE_EOF'
@@ -313,8 +329,9 @@ class Reason(str, Enum):
     ISSUER_UNKNOWN = "issuer_unknown"
     # verify -> deny
     SIGNATURE_INVALID = "signature_invalid"
-    TOKEN_EXPIRED = "token_expired"
-    TOKEN_NOT_YET_VALID = "token_not_yet_valid"
+    # The Reason values below are status strings, not credentials.
+    TOKEN_EXPIRED = "token_expired"  # nosec B105
+    TOKEN_NOT_YET_VALID = "token_not_yet_valid"  # nosec B105
     AUDIENCE_MISMATCH = "audience_mismatch"
     PROOF_INVALID = "proof_invalid"
     REPLAY_DETECTED = "replay_detected"
@@ -1615,6 +1632,21 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: lint + static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install lint tools
+        run: pip install -e ".[lint]"
+      - name: Ruff (lint)
+        run: ruff check .
+      - name: Bandit (security static analysis)
+        run: bandit -c pyproject.toml -r src
+
   test:
     name: ${{ matrix.os }} py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
@@ -1737,7 +1769,7 @@ Each is answered here as it stands today.
 | **Release methodology** | SemVer with tagged releases; pre-1.0 while the wire format stabilizes (documented in the spec) |
 | **Public contribution process for specs** | SPEC.md is versioned in-repo; changes proceed by pull request with rationale. Formalized in CONTRIBUTING.md (scheduled) |
 | **Public issue tracker** | GitHub Issues |
-| **External dependencies (and licenses)** | Core runtime: **zero dependencies.** Optional extras: PyJWT (MIT), cryptography (Apache-2.0 / BSD), FastMCP (Apache-2.0). Dev-only: pytest (MIT), Hypothesis (MPL-2.0). *Licenses to be re-verified at submission time.* |
+| **External dependencies (and licenses)** | Core runtime: **zero dependencies.** Optional extras: PyJWT (MIT), cryptography (Apache-2.0 OR BSD-3-Clause), FastMCP (Apache-2.0). Dev-only: pytest (MIT), Hypothesis (MPL-2.0). Verified from installed package metadata on 2026-06-29; all permissive and Apache-2.0-compatible. |
 | **Core maintainers** | Christian Smith (sole maintainer) |
 | **Leadership and decision-making** | Currently single-maintainer; governance defines the path to shared, merit-based maintainership (scheduled in GOVERNANCE.md) |
 | **Documented governance (GOVERNANCE.md)** | Scheduled (see checklist) |
@@ -1845,10 +1877,10 @@ Adoption and community (must, takes time):
 - [ ] At least one committer from a second organization (Impact-stage signal)
 
 Process polish (should):
-- [ ] Tagged SemVer release
-- [ ] Published roadmap
-- [ ] OpenSSF Best Practices badge
-- [ ] Re-verify all dependency licenses
+- [ ] Tagged SemVer release (v0.1.0 prepared; tag on next push)
+- [x] Published roadmap (ROADMAP.md, in the public repo)
+- [ ] OpenSSF Best Practices badge (self-assessment drafted; submission pending)
+- [x] Re-verify all dependency licenses (verified 2026-06-29)
 
 When the governance musts are green and the adoption musts show real, honest
 progress, and a TC sponsor is in hand, the proposal moves from this dossier into
@@ -1861,6 +1893,50 @@ exactly as the policy provides.
 *Honesty note: this dossier claims no adoption it doesn't have and no governance
 it hasn't written. Its value is in being accurate about where the project stands
 and specific about what closing the distance requires.*
+RNV_FILE_EOF
+
+cat > 'CHANGELOG.md' <<'RNV_FILE_EOF'
+# Changelog
+
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/), and the project adheres to
+[Semantic Versioning](https://semver.org/). Pre-1.0, the wire format and API may
+change between minor versions; those changes are called out here.
+
+## [0.1.0] - 2026-06-29
+
+First tagged release: a working L1–L3 identity and authorization layer for MCP
+servers, built on one rule, resolve or refuse, never guess.
+
+### Added
+- Decision engine (`decide`) implementing the ordered sequence in SPEC section 6:
+  intake, resolve (L1), verify (L2), authorize (L3), bind. Exactly three outcomes
+  (allow, deny, unknown); no implicit allow, and unknown is never upgraded.
+- `JwtVerifier`: issuer-signature verification against a JWKS, validity-window
+  checks, audience binding, holder-of-key proof-of-possession (RFC 7800 `cnf` plus
+  RFC 7638 thumbprint), and replay detection.
+- Declarative authorization (`DocumentPolicy`) with a bounded capability matcher
+  (exact, or a single trailing-`*` prefix), deny-by-default, and an honest
+  `no_policy` versus `capability_denied` distinction.
+- A FastMCP middleware adapter that guards real tool calls and refuses with a
+  machine-readable reason.
+- A runnable demo: a guarded FastMCP server, an in-process test, and an HTTP
+  client that mints a valid identity-plus-proof. The v0 wire format is pinned in
+  SPEC section 10.
+- 46 tests, including Hypothesis property tests and three named eval gates
+  (correct-resolution, correct-refusal, no-false-refusal). CI runs a matrix on
+  Linux and Windows across Python 3.10 to 3.12, plus a FastMCP demo job.
+- Project documentation (SPEC, ROADMAP, PRIOR-ART, an AAIF readiness dossier) and
+  a governance set (GOVERNANCE, CONTRIBUTING, OWNERS, SECURITY) under Apache-2.0.
+
+### Known limits
+- Pre-1.0: the wire format is v0. RFC 9421 request-signature binding (binding the
+  proof to the HTTP method, path, and body, not only the identity token) is
+  planned.
+- L4 (structural enforcement) and L5 (cross-organizational trust) are out of scope
+  by design; this release marks where L4 begins.
+
+[0.1.0]: https://github.com/RNVizion/rnv-mcp-identity/releases/tag/v0.1.0
 RNV_FILE_EOF
 
 cat > 'CONTRIBUTING.md' <<'RNV_FILE_EOF'
@@ -1882,6 +1958,14 @@ Run the full suite:
 
 ```
 python -m pytest -q
+```
+
+Lint and security static analysis run in CI and can be run locally:
+
+```
+pip install -e ".[lint]"
+ruff check .
+bandit -c pyproject.toml -r src
 ```
 
 The suite runs on Linux and Windows across Python 3.10 through 3.12 in CI, plus a
@@ -2704,4 +2788,16 @@ cat > 'LICENSE' <<'RNV_FILE_EOF'
    limitations under the License.
 RNV_FILE_EOF
 
-echo "repo written. next:  pip install -e \".[dev,verify,fastmcp]\" && python -m pytest -q"
+cat > 'NOTICE' <<'RNV_FILE_EOF'
+rnv-mcp-identity
+Copyright 2026 Christian Smith (RNVizion)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It composes on, and is designed to interoperate with, open standards and
+projects including the Model Context Protocol, IETF/WIMSE workload identity,
+RFC 7800 (key confirmation), RFC 7638 (JWK thumbprints), and EAT attestation.
+Those specifications and projects are the property of their respective authors.
+RNV_FILE_EOF
+
+echo "repo written. next:  pip install -e \".[dev,verify,fastmcp,lint]\" && python -m pytest -q && ruff check . && bandit -c pyproject.toml -r src"
