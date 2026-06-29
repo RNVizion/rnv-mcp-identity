@@ -2800,4 +2800,43 @@ RFC 7800 (key confirmation), RFC 7638 (JWK thumbprints), and EAT attestation.
 Those specifications and projects are the property of their respective authors.
 RNV_FILE_EOF
 
+cat > '.gitignore' <<'RNV_FILE_EOF'
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Test / coverage / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build/delivery tooling (not part of the package)
+bootstrap_scaffold.sh
+*.zip
+RNV_FILE_EOF
+
 echo "repo written. next:  pip install -e \".[dev,verify,fastmcp,lint]\" && python -m pytest -q && ruff check . && bandit -c pyproject.toml -r src"
