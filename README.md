@@ -72,3 +72,30 @@ Apache-2.0. See `LICENSE`.
 This project *aspires* to become a foundation-hosted project and is not affiliated
 with, endorsed by, or accepted into the AAIF or the Linux Foundation. See
 AAIF-READINESS.md for an honest account of where it stands.
+
+## Verifying a release
+
+Each GitHub release carries the build artifacts, a `SHA256SUMS` manifest, a
+Sigstore signature over that manifest (`SHA256SUMS.sigstore.json`), and a
+CycloneDX SBOM (`sbom.cdx.json`).
+
+Check integrity (hashes):
+
+```
+sha256sum -c SHA256SUMS
+```
+
+Verify authenticity and the signer's identity (keyless Sigstore):
+
+```
+pip install sigstore
+python -m sigstore verify identity \
+  --cert-identity "https://github.com/RNVizion/rnv-mcp-identity/.github/workflows/release.yml@refs/tags/v0.1.0" \
+  --cert-oidc-issuer "https://token.actions.githubusercontent.com" \
+  --bundle SHA256SUMS.sigstore.json \
+  SHA256SUMS
+```
+
+A valid result proves the manifest was produced by this repository's release
+workflow under GitHub's OIDC, not by a third party. Replace the tag in
+`--cert-identity` with the release you are verifying.
