@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """rnv-mcp-identity: an identity-and-authorization layer for MCP servers.
 
 Resolve or refuse, never guess. The decision engine is framework-agnostic;

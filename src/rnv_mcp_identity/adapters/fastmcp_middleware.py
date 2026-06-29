@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """FastMCP adapter. The only module that imports FastMCP.
 
 Wraps every tool call in the decision sequence (SPEC section 6). Requires the

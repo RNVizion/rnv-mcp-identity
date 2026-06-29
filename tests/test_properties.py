@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """Property-based invariants over the decision engine, and the three eval
 gates (SPEC section 7) named and machine-checked. Needs hypothesis."""
 from __future__ import annotations

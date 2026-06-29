@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """HTTP client that exercises the guarded server over the real header wire path.
 
 Start the server first:  python examples/demo_server.py

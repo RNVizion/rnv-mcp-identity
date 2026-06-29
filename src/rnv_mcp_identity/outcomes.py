@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """Outcomes and reasons (SPEC sections 5 and 6)."""
 from __future__ import annotations
 

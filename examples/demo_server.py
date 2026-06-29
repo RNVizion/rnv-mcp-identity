@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """A runnable FastMCP server guarded by IdentityMiddleware.
 
 In-process:  imported by tests/test_demo_inprocess.py via build_server().

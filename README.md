@@ -1,60 +1,72 @@
 # rnv-mcp-identity
 
-*Working name. An identity-and-authorization layer for MCP servers, built on one rule: resolve or refuse, never guess.*
+An identity and authorization layer for MCP servers. On every tool call it asks one
+question, is this caller who it claims to be, and is this action within what it's
+allowed to do?, and answers with exactly one of three outcomes:
 
-> **Status: early, in active development.** The spec comes before the code, and this will change as the work teaches us.
+- **allow:** identity resolved, verified, and the action is in scope.
+- **deny:** verified, but out of scope; or an identity was presented and failed
+  verification.
+- **unknown:** identity could not be established at all. The call is refused.
 
-## What this is
+An unknown caller never acts. That rule is the whole project: *resolve or refuse,
+never guess.*
 
-MCP has an authorization spec: servers act as OAuth 2.1 resource servers, and a user delegates access to a client. What it doesn't answer is who the non-human caller is. OAuth's PKCE protects the token exchange; it doesn't authenticate the agent itself, or say who controls it. Adoption of even the existing layer is thin: as of 2026, only about 8.5% of MCP servers implement the mandatory OAuth 2.1, while the public registry has grown past 9,400 servers.
+> Status: reference implementation, pre-1.0, Apache-2.0. This is the
+> reference-implementation arm of the AIII initiative. It composes on existing
+> standards (the MCP authorization model, WIMSE workload identity, RFC 7800 key
+> confirmation, RFC 7638 thumbprints, EAT attestation) rather than replacing them.
 
-This is a small, deterministic reference implementation for the layer above that gap: an MCP server (or middleware) that attaches a verifiable agent identity, checks it, and authorizes what the agent may do, composed on top of MCP's OAuth resource-server model, refusing cleanly when it can't.
+## What's here
 
-It's the running-code half of a larger proposal, **AIII (the Artificial Intelligence Identification Initiative)**. The narrative front door lives here: https://rnvizion.dev/aiii
+- **`src/rnv_mcp_identity/`** — the library: a framework-agnostic decision engine
+  (L1 identity, L2 verification, L3 authorization) plus a FastMCP middleware
+  adapter. The core has no runtime dependencies.
+- **`examples/`** — a runnable FastMCP server guarded by the layer, an in-process
+  test, and an HTTP client. Start here to watch it allow one call and refuse three.
+- **`SPEC.md`** — the normative spec: the decision sequence, the capability and
+  policy model, the threat model, and the v0 wire format.
+- **`AAIF-READINESS.md`** — an honest dossier on whether this belongs in a
+  foundation, and what's missing before it would.
 
-## The rule
+## Quickstart
 
-Resolve or refuse, never guess. The layer returns an answer it can prove, or it declines with an explicit deny or unknown. The one move it must never make is faking a confidence it hasn't earned. A false yes travels further than an honest blank.
+```
+pip install -e ".[dev,verify,fastmcp]"
+python -m pytest -q                                # the full suite
+python -m pytest -q tests/test_demo_inprocess.py   # just the guarded-server demo
+```
 
-## Scope
+Run the demo over real HTTP:
 
-This covers the layers a single deployment can actually resolve:
+```
+python examples/demo_server.py        # terminal 1
+python examples/demo_client_http.py   # terminal 2
+```
 
-- **L1, identity provenance:** who issued this agent, and who controls it.
-- **L2, verification:** is the identity claim cryptographically real.
-- **L3, authorization:** what the agent is scoped to do, enforced per call.
+## The wire format (v0)
 
-## Non-goals, on purpose
+The identity token rides in the `mcp-agent-identity` header and a holder-of-key
+proof in `mcp-agent-proof`. The proof binds to the exact token, so a stolen token
+alone can't act. The reference client in `examples/` is the normative example; see
+SPEC.md section 10.
 
-- **L4, structural enforcement:** holding an agent to its scope across systems.
-- **L5, cross-organizational behavioral trust:** trusting an agent beyond the deployment that made it.
+## Docs
 
-These are out of scope, and that's the honest part. No single deployment can operate cross-organizational trust, so this code doesn't pretend to; it marks exactly where L4 begins and stops there. Closing that gap is the longer AIII argument, not this repo.
-
-## Grounding
-
-This doesn't invent new protocols. It maps proven ones onto the MCP surface: OAuth 2.0 for authorization, WIMSE-style workload identity, and HTTP Message Signatures (RFC 9421) for verification. Where the active IETF agent-identity drafts already specify a piece, this aligns with them rather than competing.
-
-## Eval gates
-
-Correctness is measured, not asserted. CI holds three gates, a pattern carried over from a prior retrieval project:
-
-- **Correct-resolution:** valid identities and in-scope calls succeed.
-- **Correct-refusal:** invalid identities and out-of-scope calls are denied.
-- **False-refusal:** valid identities and scopes are never wrongly denied.
-
-## Roadmap
-
-The build runs in phases, from spec to a credible proposal. See [ROADMAP.md](ROADMAP.md).
-
-## Where this is headed
-
-The goal is to get this to working level and submit it as a project proposal to the **Agentic AI Foundation (AAIF)**, the Linux Foundation directed fund that now hosts MCP. To be clear about status: this is an independent build that *aspires* to that proposal. It is not affiliated with, endorsed by, or currently a project of the AAIF.
+- `SPEC.md` — the specification
+- `ROADMAP.md` — where this is going
+- `PRIOR-ART.md` — what it builds on, and the gap it fills
+- `GOVERNANCE.md` — how decisions are made
+- `CONTRIBUTING.md` — how to help
+- `SECURITY.md` — how to report vulnerabilities
+- `AAIF-READINESS.md` — foundation-readiness assessment
 
 ## License
 
-Apache-2.0, to match MCP and AAIF norms.
+Apache-2.0. See `LICENSE`.
 
-## Feedback
+## A note on affiliation
 
-Comments, holes, and prior art are welcome. Open an issue.
+This project *aspires* to become a foundation-hosted project and is not affiliated
+with, endorsed by, or accepted into the AAIF or the Linux Foundation. See
+AAIF-READINESS.md for an honest account of where it stands.

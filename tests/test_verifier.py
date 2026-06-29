@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """Real-key L2 tests (SPEC section 6, step 2). Needs the `verify` extra."""
 from __future__ import annotations
 

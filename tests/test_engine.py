@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """Decision-engine tests. Seed the three eval gates (SPEC section 7)."""
 from __future__ import annotations
 

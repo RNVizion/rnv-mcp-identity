@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """In-process demo: drive the guarded FastMCP server through the in-memory
 client and confirm one allow and three refusals. Needs fastmcp + verify."""
 from __future__ import annotations

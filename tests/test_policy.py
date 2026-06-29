@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """L3 authorization tests: the capability matcher and the declarative policy."""
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """L1 issuer registry and L3 authorization (SPEC section 6, steps 1 and 3).
 
 The capability model is deliberately small so a grant's reach is obvious on

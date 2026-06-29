@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """The agent identity data model (SPEC section 4)."""
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """The decision sequence (SPEC section 6). Pure, framework-agnostic."""
 from __future__ import annotations
 

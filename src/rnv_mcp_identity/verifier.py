@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """L2 verification (SPEC section 6, step 2): the crypto.
 
 The Verifier owns every deny-reason in step 2. The engine never inspects a

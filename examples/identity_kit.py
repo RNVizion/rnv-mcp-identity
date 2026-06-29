@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Christian Smith (RNVizion)
 """Demo identity kit: deterministic keys and token/proof minting shared by the
 server, the HTTP client, and the in-process test. DEMO ONLY; the private keys
 are derived from fixed, public seeds and are not secret.
