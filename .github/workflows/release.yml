@@ -1,0 +1,60 @@
+name: Release
+
+# Satisfies OSPS-BR-06.01: every release asset is accounted for in a signed
+# manifest carrying its cryptographic hash. On a published release this builds
+# the sdist and wheel, writes SHA256SUMS over every asset, signs that manifest
+# keylessly with Sigstore (via the workflow's OIDC identity), and attaches all
+# of it to the release. workflow_dispatch lets you sign an existing tag (e.g. an
+# already-published v0.1.0) on demand.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build and sign, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: write   # upload assets to the release
+  id-token: write   # Sigstore keyless signing (OIDC)
+
+jobs:
+  build-sign:
+    name: build, hash, sign, attach
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Write the SHA256SUMS manifest
+        working-directory: dist
+        run: |
+          sha256sum * > SHA256SUMS
+          echo "----- SHA256SUMS -----"
+          cat SHA256SUMS
+
+      - name: Sign the manifest (keyless, Sigstore)
+        run: |
+          python -m pip install sigstore
+          python -m sigstore sign dist/SHA256SUMS
+
+      - name: Attach artifacts and signed manifest to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" dist/* --clobber
+          echo "Uploaded build artifacts, SHA256SUMS, and its Sigstore signature to $TAG."
