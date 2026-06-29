@@ -13,7 +13,7 @@ An unknown caller never acts. That rule is the whole project: *resolve or refuse
 never guess.*
 
 > Status: reference implementation, pre-1.0, Apache-2.0. This is the
-> reference-implementation arm of AIII, the Artificial Intelligence Identification Initiative (rnvizion.dev/aiii). It composes on existing
+> reference-implementation arm of AIII, the [Artificial Intelligence Identification Initiative](https://rnvizion.dev/aiii/). It composes on existing
 > standards (the MCP authorization model, WIMSE workload identity, RFC 7800 key
 > confirmation, RFC 7638 thumbprints, EAT attestation) rather than replacing them.
 
