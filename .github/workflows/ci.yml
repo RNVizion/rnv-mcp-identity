@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default: jobs only check out and run tests/lint, no writes.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: lint + static analysis
